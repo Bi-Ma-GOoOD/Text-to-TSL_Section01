@@ -87,58 +87,108 @@ def get_clip_path_from_motion_dict(word, context, motion_dict_path):
 
     return "SUCCESS", sub_folder
 
+def download_ttrs_video(word, context, word_url, store_video_path, motion_dict_path):
+    # 1. ดึง id จาก url ท้ายสุด
+    video_id = word_url.split('/')[-1].strip()
+
+    # 2. สร้างลิงก์ API
+    api_url = f"https://apidic.ttrs.or.th/api/v1/sqrtube_get_by_id/{video_id}"
+
+    try:
+        # 3. ยิง request ไปขอข้อมูล JSON
+        response = requests.get(api_url, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+
+        # 4. ดึงลิงก์วิดีโอ .mp4 (พยายามดึง 720p ก่อน ถ้าไม่มีเอาอันธรรมดา)
+        video_url = data.get("urlmp4_720") or data.get("url_mp4") or data.get("urlmp4_480")
+
+        if not video_url:
+            print(f"ERROR: .MP4 not found this {word_url} in www.dic.ttrs.or.th")
+            return "ERROR", f".MP4 not found this {word_url} in www.dic.ttrs.or.th"
+
+        status, msg = get_clip_path_from_motion_dict(word, context, motion_dict_path)
+        if status == "SUCCESS":
+            address_of_motion_and_video = {}
+            # เก็บที่อยู่ของ motion.json ที่กำลังจะถูกสร้างใน mediapipe
+            output_motion_path = os.path.join(msg['variant_dir'], "motion.json")
+            address_of_motion_and_video['output_motion_path'] = output_motion_path
+
+            main_clip_video_path = create_folder_clip_word_dict(store_video_path)
+            output_video_path = os.path.join(main_clip_video_path, msg['first_char'], msg['word'], msg['variant_key'], "original.mp4")
+            address_of_motion_and_video['output_video_path'] = output_video_path
+
+            vid_response = requests.get(video_url, stream=True)
+            vid_response.raise_for_status()
+
+            with open(output_video_path, 'wb') as video:
+                for chunk in vid_response.iter_content(chunk_size=8192):
+                    if chunk:
+                        video.write(chunk)
+                    
+            return "SUCCESS", address_of_motion_and_video
+        else:
+            return status, msg
+    except Exception as e:
+        return "ERROR", f"{e}"
+
 def download_th_sl_video(word, context, word_url, store_video_path, motion_dict_path):
-    # ------------------------------------------------
-    # 1. โหลดหน้าเว็บและสร้างโครงสร้างของ Tree 
-    # ------------------------------------------------
-    reponse = requests.get(word_url, timeout = 15)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.content, 'html.parser')
-
-    # ------------------------------------------------
-    # 2. ดึงลิงก์วิดีโอของคำ
-    # ------------------------------------------------
-    video_tag = soup.find('video')
-    if not video_tag:
-        print("ERROR: video not found!")
-        return "ERROR", "Video not found!"
-
-    source_tag = video_tag.find('source', type="video/mp4")
-    if not source_tag or 'src' not in source_tag.attrs:
-        print(f"ERROR: .MP4 not found in {word_url}")
-        return "ERROR", f".MP4 not found! in {word_url}"
-
-    video_url = source_tag['src']
-
-    # ------------------------------------------------
-    # 3. จัดการโครงสร้าง File System และ meta.json
-    # ------------------------------------------------
-    # ตรวจสอบก่อนว่ามีคำ และ บริบท ของภาษามือไทยนี้หรือยังใน Motion_Dict
-    status, msg = get_clip_path_from_motion_dict(word, context, motion_dict_path)
-    if status == "SUCCESS":
-        address_of_motion_and_video = {}
-        # เก็บที่อยู่ของ motion.json ที่กำลังจะถูกสร้างใน mediapipe
-        output_motion_path = os.path.join(msg['variant_dir'], "motion.json")
-        address_of_motion_and_video['output_motion_path'] = output_motion_path
+    try:
+        # ------------------------------------------------
+        # 1. โหลดหน้าเว็บและสร้างโครงสร้างของ Tree 
+        # ------------------------------------------------
+        reponse = requests.get(word_url, timeout = 15)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
 
         # ------------------------------------------------
-        # 4. ดาวน์โหลดไฟล์ .mp4
+        # 2. ดึงลิงก์วิดีโอของคำ
         # ------------------------------------------------
-        # เก็บที่อยู่ของ original.mp4 ที่จะอยู่ใน CLIP_WORD_DICT
-        main_clip_video_path = create_folder_clip_word_dict(store_video_path)
-        output_video_path = os.path.join(main_clip_video_path, msg['first_char'], msg['word'], msg['variant_key'], "original.mp4")
-        address_of_motion_and_video['output_video_path'] = output_video_path
+        video_tag = soup.find('video')
+        if not video_tag:
+            print("ERROR: video not found!")
+            return "ERROR", "Video not found!"
 
-        vid_response = requests.get(video_url, stream=True)
-        vid_response.raise_for_status()
+        source_tag = video_tag.find('source', type="video/mp4")
+        if not source_tag or 'src' not in source_tag.attrs:
+            print(f"ERROR: .MP4 not found this {word_url} in www.th-sl.com")
+            return "ERROR", f".MP4 not found this {word_url} in www.th-sl.com"
 
-        with open(output_video_path, 'wb') as video:
-            for chunk in vid_response.iter_content(chunk_size=8192):
-                video.write(chunk)
+        video_url = source_tag['src']
 
-        return "SUCCESS", address_of_motion_and_video
-    else:
-        return status, msg
+        # ------------------------------------------------
+        # 3. จัดการโครงสร้าง File System และ meta.json
+        # ------------------------------------------------
+        # ตรวจสอบก่อนว่ามีคำ และ บริบท ของภาษามือไทยนี้หรือยังใน Motion_Dict
+        status, msg = get_clip_path_from_motion_dict(word, context, motion_dict_path)
+        if status == "SUCCESS":
+            address_of_motion_and_video = {}
+            # เก็บที่อยู่ของ motion.json ที่กำลังจะถูกสร้างใน mediapipe
+            output_motion_path = os.path.join(msg['variant_dir'], "motion.json")
+            address_of_motion_and_video['output_motion_path'] = output_motion_path
+
+            # ------------------------------------------------
+            # 4. ดาวน์โหลดไฟล์ .mp4
+            # ------------------------------------------------
+            # เก็บที่อยู่ของ original.mp4 ที่จะอยู่ใน CLIP_WORD_DICT
+            main_clip_video_path = create_folder_clip_word_dict(store_video_path)
+            output_video_path = os.path.join(main_clip_video_path, msg['first_char'], msg['word'], msg['variant_key'], "original.mp4")
+            address_of_motion_and_video['output_video_path'] = output_video_path
+
+            vid_response = requests.get(video_url, stream=True)
+            vid_response.raise_for_status()
+
+            with open(output_video_path, 'wb') as video:
+                for chunk in vid_response.iter_content(chunk_size=8192):
+                    if chunk:
+                        video.write(chunk)
+                        
+
+            return "SUCCESS", address_of_motion_and_video
+        else:
+            return status, msg
+    except Exception as e:
+        return "ERROR", f"{e}"
 
 def process_single_url(word, context, word_url, store_video_path, motion_dict_path):
     # ตรวจสอบว่าลิงก์ที่เข้ามาเป็นมี source ที่เรารองรับหรือไม่
@@ -159,9 +209,23 @@ def process_single_url(word, context, word_url, store_video_path, motion_dict_pa
         else:
             return status, msg
     elif "dic.ttrs" in word_url:
-        return download_ttrs_video(word, context, word_url, store_video_path, motion_dict_path)
+        print(f"Downloading step:")
+        status, msg = download_ttrs_video(word, context, word_url, store_video_path, motion_dict_path)
+        if status == "SUCCESS":
+            print(f"Dowloading clip from {word_url} success, and clip saved at: {msg['output_video_path']}")
+            print("Processing clip into motion.jon step:")
+            process_sign_language_video(msg['output_video_path'], msg['output_motion_path'])
+            # ตรวจสอบความปลอดภัย: เช็คว่าไฟล์ motion.json สร้างสำเร็จแล้วจริงๆ
+            if os.path.exists(msg['output_motion_path']):
+                return "SUCCESS", f"Processing video from {msg['output_video_path']} success and saved motion.json at {msg['output_motion_path']}"
+            else:
+                print(f"ERROR: clip from {word_url} can't processed video to motion.json")
+                return "ERROR", f"clip from {word_url} can't processed video to motion.json"
+        else:
+            return status, msg
     elif "youtube" in word_url or "youtu.be" in word_url:
-        return download_youtube_video(word, context, word_url, store_video_path, motion_dict_path)
+        print(f"Downloading step:")
+        status, msg = download_youtube_video(word, context, word_url, store_video_path, motion_dict_path)
     else:
         return "ERROR", f"This system not supported the source of this url: {word_url}"
 
