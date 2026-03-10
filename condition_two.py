@@ -23,7 +23,20 @@ def get_first_consonant(base_word):
     else:
         return base_word[0].upper()
 
-def get_word_path_from_motion_dict(word, context, motion_dict_path):
+def create_folder_clip_word_dict(store_video_path):
+    result_path = ""
+    p = Path(store_video_path)
+
+    if p.name.upper() != "CLIP_WORD_DICT":
+        result_path = os.path.join(store_video_path, "CLIP_WORD_DICT")
+        os.makedirs(result_path, exist_ok=True)
+        return result_path
+    else:
+        result_path = store_video_path
+        return result_path
+
+def get_clip_path_from_motion_dict(word, context, motion_dict_path):
+    sub_folder = {} # เอาไว้เก็บ first_char, word, variant and full_variant_path
     maint_path = ""
     p = Path(motion_dict_path)
 
@@ -35,10 +48,12 @@ def get_word_path_from_motion_dict(word, context, motion_dict_path):
 
     # ดึงอักษรตัวแรกของคำภาษามือไทยคำนั้นๆ
     first_char = get_first_consonant(word)
+    sub_folder['first_char'] = first_char
 
     # สร้างโฟลเดอร์ระดับคำศัพท์ ex. (CLIP_WORD_DICT/ก/เกิน)
     word_dir = os.path.join(main_path, first_char, word)
     os.makedirs(word_dir, exist_ok=True)
+    sub_folder['word'] = word
 
     # ดึงไฟล์ meta.json ออกมาเพื่อดูว่าคำนี้มีมาแล้วกี่บริบท / คำนี้พึ่งถูกสร้างครั้งแรก
     meta_path = os.path.join(word_dir, "meta.json")
@@ -58,6 +73,7 @@ def get_word_path_from_motion_dict(word, context, motion_dict_path):
     # หาหมายเลขเวอร์ชันถัดไป (นับจำนวน key ใน json แล้ว + 1)
     next_variant_key_num = len(meta_data) + 1
     new_variant_key = f"v{next_variant_key_num}"
+    sub_folder['variant_key'] = new_variant_key
 
     # อัปเดตไฟล์ meta.json
     meta_data[new_variant_key] = context
@@ -67,59 +83,9 @@ def get_word_path_from_motion_dict(word, context, motion_dict_path):
     # สร้างโฟลเดอร์เวอร์ชันย่อย (บริบท ใหม่ที่พึ่งถูกเพิ่มเข้ามา)
     variant_dir = os.path.join(word_dir, new_variant_key)
     os.makedirs(variant_dir, exist_ok=True)
+    sub_folder['variant_dir'] = variant_dir
 
-    return "SUCCESS", variant_dir
-
-
-def create_folder_in_clip_word_dict(word, context, store_video_path):
-    main_path = ""
-    p = Path(store_video_path)
-
-    # ตรวจสอบว่า มีโฟลเดอร์ที่ชื่อว่า ClIP_WORD_DICT อยู่ในนี้ไหม เพราะระบบจะเก็บคลิปที่โหลดมาเอาไว้ในนี้
-    if p.name.upper() != "CLIP_WORD_DICT-2": # ตอนทำเสร็จแล้ว เอา -2 ออกนะ
-        # สร้างโฟลเดอร์หลัก
-        main_path = os.path.join(store_video_path, "CLIP_WORD_DICT-2")
-        os.makedirs(main_path, exist_ok=True)
-    else:
-        main_path = store_video_path
-
-    # ดึงอักษรตัวแรกของคำภาษามือไทยคำนั้นๆ
-    first_char = get_first_consonant(word)
-
-    # สร้างโฟลเดอร์ระดับคำศัพท์ ex. (CLIP_WORD_DICT/ก/เกิน)
-    word_dir = os.path.join(main_path, first_char, word)
-    os.makedirs(word_dir, exist_ok=True)
-
-    # ดึงไฟล์ meta.json ออกมาเพื่อดูว่าคำนี้มีมาแล้วกี่บริบท / คำนี้พึ่งถูกสร้างครั้งแรก
-    meta_path = os.path.join(word_dir, "meta.json")
-    meta_data = {}
-
-    # ถ้ามีไฟล์ meta.json แล้ว ให้อ่านข้อมูลขึ้นมา
-    if os.path.exists(meta_path):
-        with open(meta_path, 'r', encoding='utf-8') as reader:
-            meta_data = json.load(reader)
-
-    # เช็คว่าบริบทนี้มีอยู่แล้วในคำภาษามือไทยนั้นๆ แล้วหรือไม่
-    for variant_key, key_context in meta_data.items():
-        if key_context == context:
-            print(f"SKIPPED: This context already have in this {word}, skip dowload.")
-            return "SKIPPED", f"This context already have in this {word}, skip dowload."
-
-    # หาหมายเลขเวอร์ชันถัดไป (นับจำนวน key ใน json แล้ว + 1)
-    next_variant_key_num = len(meta_data) + 1
-    new_variant_key = f"v{next_variant_key_num}"
-
-    # อัปเดตไฟล์ meta.json
-    meta_data[new_variant_key] = context
-    with open(meta_path, 'w', encoding='utf-8') as writer:
-        json.dump(meta_data, writer, ensure_ascii=False, indent=4)
-
-    # สร้างโฟลเดอร์เวอร์ชันย่อย (บริบท ใหม่ที่พึ่งถูกเพิ่มเข้ามา)
-    variant_dir = os.path.join(word_dir, new_variant_key)
-    os.makedirs(variant_dir, exist_ok=True)
-
-    return "SUCCESS", variant_dir
-
+    return "SUCCESS", sub_folder
 
 def download_th_sl_video(word, context, word_url, store_video_path, motion_dict_path):
     # ------------------------------------------------
@@ -147,30 +113,32 @@ def download_th_sl_video(word, context, word_url, store_video_path, motion_dict_
     # ------------------------------------------------
     # 3. จัดการโครงสร้าง File System และ meta.json
     # ------------------------------------------------
-    
     # ตรวจสอบก่อนว่ามีคำ และ บริบท ของภาษามือไทยนี้หรือยังใน Motion_Dict
-    status, msg = get_word_path_from_motion_dict(word, context, motion_dict_path)
-
-
-
-    # todo: ละเอาไว้ก่อนแปปนึง เดี๋ยวงง
-    status, msg = create_folder_in_clip_word_dict(word, context, store_video_path)
+    status, msg = get_clip_path_from_motion_dict(word, context, motion_dict_path)
     if status == "SUCCESS":
+        address_of_motion_and_video = {}
+        # เก็บที่อยู่ของ motion.json ที่กำลังจะถูกสร้างใน mediapipe
+        output_motion_path = os.path.join(msg['variant_dir'], "motion.json")
+        address_of_motion_and_video['output_motion_path'] = output_motion_path
+
         # ------------------------------------------------
         # 4. ดาวน์โหลดไฟล์ .mp4
         # ------------------------------------------------
-        output_file_path = os.path.join(msg, "original.mp4")
+        # เก็บที่อยู่ของ original.mp4 ที่จะอยู่ใน CLIP_WORD_DICT
+        main_clip_video_path = create_folder_clip_word_dict(store_video_path)
+        output_video_path = os.path.join(main_clip_video_path, msg['first_char'], msg['word'], msg['variant_key'], "original.mp4")
+        address_of_motion_and_video['output_video_path'] = output_video_path
+
         vid_response = requests.get(video_url, stream=True)
         vid_response.raise_for_status()
 
-        with open(output_file_path, 'wb') as video:
+        with open(output_video_path, 'wb') as video:
             for chunk in vid_response.iter_content(chunk_size=8192):
                 video.write(chunk)
 
-        return "SUCCESS", output_file_path
-    elif status == "SKIPPED" or status == "ERROR":
+        return "SUCCESS", address_of_motion_and_video
+    else:
         return status, msg
-
 
 def process_single_url(word, context, word_url, store_video_path, motion_dict_path):
     # ตรวจสอบว่าลิงก์ที่เข้ามาเป็นมี source ที่เรารองรับหรือไม่
@@ -179,28 +147,15 @@ def process_single_url(word, context, word_url, store_video_path, motion_dict_pa
         print(f"Downloading step:")
         status, msg = download_th_sl_video(word, context, word_url, store_video_path, motion_dict_path)
         if status == "SUCCESS":
-            path = os.path.split(msg)
-            video_path = os.path.join(path[0], "orginal.mp4")
-            print(f"Dowloading clip from {word_url} success, and clip saved at: {msg}")
-
-            # เราทำอันนี้เพื่อดึง path ของ motion_dict มาก่อนว่าจริงๆแล้ว คำควรเซฟเอาไว้ตรงไหน แล้วพอรู้แล้ว ก็ส่ง path นั้นออกมา แล้วส่งต่อให้ process_sign... เลย
-            print("Managing the location of the motion.json file in Motion_dict for save step:")
-            status, msg = get_word_path_from_motion_dict(word, context, motion_dict_path)
-            if status == "SUCCESS":
-                print("Managing location success.")
-                json_path = os.path.join(msg, "motion.json")
-
-                print("Processing clip into motion.jon step")
-                process_sign_language_video(video_path, json_path)
-                # ตรวจสอบความปลอดภัย: เช็คว่าไฟล์ motion.json สร้างสำเร็จแล้วจริงๆ
-                if os.path.exists(json_path):
-                    return "SUCCESS", f"Processing video from {video_path} success and saved motion.json at {json_path}"
-                else:
-                    print(f"ERROR: clip from {word_url} can't processed video to motion.json")
-                    return "ERROR", f"clip from {word_url} can't processed video to motion.json"
+            print(f"Dowloading clip from {word_url} success, and clip saved at: {msg['output_video_path']}")
+            print("Processing clip into motion.jon step:")
+            process_sign_language_video(msg['output_video_path'], msg['output_motion_path'])
+            # ตรวจสอบความปลอดภัย: เช็คว่าไฟล์ motion.json สร้างสำเร็จแล้วจริงๆ
+            if os.path.exists(msg['output_motion_path']):
+                return "SUCCESS", f"Processing video from {msg['output_video_path']} success and saved motion.json at {msg['output_motion_path']}"
             else:
-                return status, msg
-
+                print(f"ERROR: clip from {word_url} can't processed video to motion.json")
+                return "ERROR", f"clip from {word_url} can't processed video to motion.json"
         else:
             return status, msg
     elif "dic.ttrs" in word_url:
@@ -257,6 +212,7 @@ def reading_json_file(input_json_path):
                         status, msg = process_single_url(word_name, word_context, word_url, raw_temp_vid_path, raw_motion_dict_path)
 
                         if status == "SUCCESS":
+                            success += 1
                             print(f"{status}: {msg}")
                         elif status == "SKIPPED":
                             skipped += 1
