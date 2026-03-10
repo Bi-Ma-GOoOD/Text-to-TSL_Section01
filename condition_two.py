@@ -19,7 +19,7 @@ def running_process_sign_language_video(status, msg, word_url):
         if os.path.exists(msg['output_motion_path']):
             return "SUCCESS", f"Processing video from {msg['output_video_path']} success and saved motion.json at {msg['output_motion_path']}"
         else:
-            print(f"ERROR: clip from {word_url} can't processed video to motion.json")
+            # print(f"ERROR: clip from {word_url} can't processed video to motion.json")
             return "ERROR", f"clip from {word_url} can't processed video to motion.json"
     else:
         return status, msg
@@ -58,7 +58,7 @@ def get_clip_path_from_motion_dict(word, context, motion_dict_path):
     p = Path(motion_dict_path)
 
     if p.name.upper() != "MOTION_DICT":
-        print(f"ERROR: system not found the address from: {motion_dict_path}, please dowload MOTION_DICT zip and extract it.")
+        # print(f"ERROR: system not found the address from: {motion_dict_path}, please dowload MOTION_DICT zip and extract it.")
         return "ERROR", f"system not found the address from: {motion_dict_path}, please dowload MOTION_DICT zip and extract it."
     else:
         main_path = motion_dict_path
@@ -84,7 +84,7 @@ def get_clip_path_from_motion_dict(word, context, motion_dict_path):
     # เช็คว่าบริบทนี้มีอยู่แล้วในคำภาษามือไทยนั้นๆ แล้วหรือไม่
     for variant_key, key_context in meta_data.items():
         if key_context == context:
-            print(f"SKIPPED: This context already have in this {word}, skip saving motion.json")
+            # print(f"SKIPPED: This context already have in this {word}, skip saving motion.json")
             return "SKIPPED", f"This context already have in this {word}, skip saving motion.json"
 
     # หาหมายเลขเวอร์ชันถัดไป (นับจำนวน key ใน json แล้ว + 1)
@@ -116,10 +116,12 @@ def download_youtube_video(word, context, word_url, store_video_path, motion_dic
         output_video_path = os.path.join(main_clip_video_path, msg['first_char'], msg['word'], msg['variant_key'], "original.mp4")
         address_of_motion_and_video['output_video_path'] = output_video_path
 
+        os.makedirs(os.path.dirname(output_video_path), exist_ok=True)
+
         # ตั้งค่า yt-dlp 
         ydl_opts = {
             # บังคับให้โหลดเฉพาะวิดีโอ (ไม่เอาเสียง) และต้องเป็น .mp4 เท่านั้น
-            'format': 'bestvideo[ext=mp4]/best[ext=mp4]',
+            'format': 'best[ext=mp4][vcodec^=avc1]',
             'outtmpl': output_video_path, # ชื่อไฟล์และที่อยู่ที่จะเซฟ
             'quiet': True, # ไม่ให้แสดง Progress bar ตอนโหลด
             'no_warnings': True,
@@ -134,12 +136,12 @@ def download_youtube_video(word, context, word_url, store_video_path, motion_dic
             if os.path.exists(output_video_path):
                 return "SUCCESS", address_of_motion_and_video
             else:
-                print(f"ERROR: Dowload successed but not found the original.mp4 at {output_video_path}")
+                # print(f"ERROR: Dowload successed but not found the original.mp4 at {output_video_path}")
                 return "ERROR" f"Dowload successed but not found the original.mp4 at {output_video_path}"
 
         except Exception as e:
-            print(f"ERROR: Somthing went wrong for loading clip Youtube: {e}")
-            return "ERROR", f"Somthing went wrong for loading clip Youtube: {e}"
+            # print(f"ERROR: Somthing went wrong for loading clip Youtube: {e}")
+            return "ERROR", f"URL: {word_url} | Error: somthing went wrong for loading clip Youtube:{e}"
     else:
         return status, msg
 
@@ -157,11 +159,34 @@ def download_ttrs_video(word, context, word_url, store_video_path, motion_dict_p
         data = response.json()
 
         # 4. ดึงลิงก์วิดีโอ .mp4 (พยายามดึง 720p ก่อน ถ้าไม่มีเอาอันธรรมดา)
-        video_url = data.get("urlmp4_720") or data.get("url_mp4") or data.get("urlmp4_480")
+        # video_url = data.get("urlmp4_720") or data.get("url_mp4") or data.get("urlmp4_480")
+        # แทนที่โค้ดดึง video_url เดิมด้วยบล็อกนี้
+        possible_urls = [
+            data.get("urlmp4_720"),
+            data.get("urlmp4_480"),
+            data.get("url_mp4"),
+            data.get("url_download")
+        ]
 
-        if not video_url:
-            print(f"ERROR: .MP4 not found this {word_url} in www.dic.ttrs.or.th")
-            return "ERROR", f".MP4 not found this {word_url} in www.dic.ttrs.or.th"
+        vid_response = None
+        
+        # วนลูปทดสอบโหลดทีละลิงก์
+        for p_url in possible_urls:
+            if not p_url:
+                continue
+            try:
+                temp_res = requests.get(p_url, stream=True, timeout=15)
+                temp_res.raise_for_status() # ถ้าเจอ 404 โปรแกรมจะกระโดดไปที่ except HTTPError
+                
+                # ถ้าผ่านมาถึงบรรทัดนี้ได้ แปลว่าลิงก์นี้มีไฟล์อยู่จริง
+                vid_response = temp_res
+                break # หยุดลูปเลย ไม่ต้องลองลิงก์อื่นแล้ว
+                
+            except requests.exceptions.HTTPError:
+                continue
+                
+        if not vid_response:
+            return "ERROR", f"URL: {word_url} | Error: Not found any link url that can download (404 Not Found)."
 
         status, msg = get_clip_path_from_motion_dict(word, context, motion_dict_path)
         if status == "SUCCESS":
@@ -174,8 +199,7 @@ def download_ttrs_video(word, context, word_url, store_video_path, motion_dict_p
             output_video_path = os.path.join(main_clip_video_path, msg['first_char'], msg['word'], msg['variant_key'], "original.mp4")
             address_of_motion_and_video['output_video_path'] = output_video_path
 
-            vid_response = requests.get(video_url, stream=True)
-            vid_response.raise_for_status()
+            os.makedirs(os.path.dirname(output_video_path), exist_ok=True)
 
             with open(output_video_path, 'wb') as video:
                 for chunk in vid_response.iter_content(chunk_size=8192):
@@ -186,14 +210,14 @@ def download_ttrs_video(word, context, word_url, store_video_path, motion_dict_p
         else:
             return status, msg
     except Exception as e:
-        return "ERROR", f"{e}"
+        return "ERROR", f"URL: {word_url} | Error: {e}"
 
 def download_th_sl_video(word, context, word_url, store_video_path, motion_dict_path):
     try:
         # ------------------------------------------------
         # 1. โหลดหน้าเว็บและสร้างโครงสร้างของ Tree 
         # ------------------------------------------------
-        reponse = requests.get(word_url, timeout = 15)
+        response = requests.get(word_url, timeout = 15)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
 
@@ -202,12 +226,12 @@ def download_th_sl_video(word, context, word_url, store_video_path, motion_dict_
         # ------------------------------------------------
         video_tag = soup.find('video')
         if not video_tag:
-            print(f"ERROR: video not found! from {word_url}")
+            # print(f"ERROR: video not found! from {word_url}")
             return "ERROR", f"Video not found! from {word_url}"
 
         source_tag = video_tag.find('source', type="video/mp4")
         if not source_tag or 'src' not in source_tag.attrs:
-            print(f"ERROR: .MP4 not found this {word_url} in www.th-sl.com")
+            # print(f"ERROR: .MP4 not found this {word_url} in www.th-sl.com")
             return "ERROR", f".MP4 not found this {word_url} in www.th-sl.com"
 
         video_url = source_tag['src']
@@ -231,6 +255,8 @@ def download_th_sl_video(word, context, word_url, store_video_path, motion_dict_
             output_video_path = os.path.join(main_clip_video_path, msg['first_char'], msg['word'], msg['variant_key'], "original.mp4")
             address_of_motion_and_video['output_video_path'] = output_video_path
 
+            os.makedirs(os.path.dirname(output_video_path), exist_ok=True)
+
             vid_response = requests.get(video_url, stream=True)
             vid_response.raise_for_status()
 
@@ -244,7 +270,7 @@ def download_th_sl_video(word, context, word_url, store_video_path, motion_dict_
         else:
             return status, msg
     except Exception as e:
-        return "ERROR", f"{e}"
+        return "ERROR", f"URL: {word_url} | Error: {e}"
 
 def process_single_url(word, context, word_url, store_video_path, motion_dict_path):
     # ตรวจสอบว่าลิงก์ที่เข้ามาเป็นมี source ที่เรารองรับหรือไม่
@@ -299,6 +325,8 @@ def reading_json_file(input_json_path):
                 skipped = 0
                 error = 0
 
+                print("= = = = = Starting Process = = = = =")
+
                 for idx, word in enumerate(word_list, 1):
                     try:
                         word_name = word.get("word_name").strip()
@@ -309,7 +337,7 @@ def reading_json_file(input_json_path):
                         # ตรวจสอบว่า ชื่อ บริบท และลิงก์ต้นตอของคำเป็นช่องว่างไหม 
                         # ------------------------------------------------
                         if word_name and word_context and word_url:
-                            print(f"[{idx}/{len(word_list)}]")
+                            print(f"[\nOrder: {idx}/{len(word_list)}\nWord Name: {word_name}\nWord Context: {word_context}\nURL: {word_url}\n] ")
                             status, msg = process_single_url(word_name, word_context, word_url, raw_temp_vid_path, raw_motion_dict_path)
 
                             if status == "SUCCESS":
@@ -334,6 +362,12 @@ def reading_json_file(input_json_path):
                         error += 1
                         print(f"Have an error in  in [{word_url}]. | Error: {e}")
                         log.write(f"URL: {word_url} | Error: {e}\n")
+
+                print("- - - - - Summary - - - -")
+                print(f"SUCCESS: {success} clips.")
+                print(f"SKIPPED: {skipped} clips.")
+                print(f"ERROR: {error} clips. error_condition_two_log.txt saved at {err_log}")
+                print("= = = = = Ending Process = = = = =")
         else:
             print("Error: please dowload MOTION_DICT before you use this operation.")
             return None
