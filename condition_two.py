@@ -361,7 +361,7 @@ def reading_json_file(input_json_path):
                     except Exception as e:
                         error += 1
                         print(f"Have an error in  in [{word_url}]. | Error: {e}")
-                        log.write(f"URL: {word_url} | Error: {e}\n")
+                        err_log.write(f"URL: {word_url} | Error: {e}\n")
 
                 print("- - - - - Summary - - - -")
                 print(f"SUCCESS: {success} clips.")
