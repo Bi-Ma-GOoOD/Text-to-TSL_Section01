@@ -4,8 +4,25 @@ import requests
 from bs4 import BeautifulSoup
 from pathlib import Path
 import time
+import yt_dlp
 
 from processor import process_sign_language_video
+
+def running_process_sign_language_video(status, msg, word_url):
+    if status == "SUCCESS":
+        print(f"Dowloading clip from {word_url} success, and clip saved at: {msg['output_video_path']}")
+        print("Processing clip into motion.jon step:")
+
+        process_sign_language_video(msg['output_video_path'], msg['output_motion_path'])
+
+        # ตรวจสอบความปลอดภัย: เช็คว่าไฟล์ motion.json สร้างสำเร็จแล้วจริงๆ
+        if os.path.exists(msg['output_motion_path']):
+            return "SUCCESS", f"Processing video from {msg['output_video_path']} success and saved motion.json at {msg['output_motion_path']}"
+        else:
+            print(f"ERROR: clip from {word_url} can't processed video to motion.json")
+            return "ERROR", f"clip from {word_url} can't processed video to motion.json"
+    else:
+        return status, msg
 
 def get_first_consonant(base_word):
     """
@@ -87,6 +104,45 @@ def get_clip_path_from_motion_dict(word, context, motion_dict_path):
 
     return "SUCCESS", sub_folder
 
+def download_youtube_video(word, context, word_url, store_video_path, motion_dict_path):
+    status, msg = get_clip_path_from_motion_dict(word, context, motion_dict_path)
+    if status == "SUCCESS":
+        address_of_motion_and_video = {}
+        # เก็บที่อยู่ของ motion.json ที่กำลังจะถูกสร้างใน mediapipe
+        output_motion_path = os.path.join(msg['variant_dir'], "motion.json")
+        address_of_motion_and_video['output_motion_path'] = output_motion_path
+
+        main_clip_video_path = create_folder_clip_word_dict(store_video_path)
+        output_video_path = os.path.join(main_clip_video_path, msg['first_char'], msg['word'], msg['variant_key'], "original.mp4")
+        address_of_motion_and_video['output_video_path'] = output_video_path
+
+        # ตั้งค่า yt-dlp 
+        ydl_opts = {
+            # บังคับให้โหลดเฉพาะวิดีโอ (ไม่เอาเสียง) และต้องเป็น .mp4 เท่านั้น
+            'format': 'bestvideo[ext=mp4]/best[ext=mp4]',
+            'outtmpl': output_video_path, # ชื่อไฟล์และที่อยู่ที่จะเซฟ
+            'quiet': True, # ไม่ให้แสดง Progress bar ตอนโหลด
+            'no_warnings': True,
+            'overwrites': True # ถ้ามีไฟล์ original.mp4 ค้างอยู่ให้เขียนทับเลย
+        }
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([word_url])
+
+            # ตรวจสอบว่าโหลดมาสำเร็จและมีไฟล์จริง
+            if os.path.exists(output_video_path):
+                return "SUCCESS", address_of_motion_and_video
+            else:
+                print(f"ERROR: Dowload successed but not found the original.mp4 at {output_video_path}")
+                return "ERROR" f"Dowload successed but not found the original.mp4 at {output_video_path}"
+
+        except Exception as e:
+            print(f"ERROR: Somthing went wrong for loading clip Youtube: {e}")
+            return "ERROR", f"Somthing went wrong for loading clip Youtube: {e}"
+    else:
+        return status, msg
+
 def download_ttrs_video(word, context, word_url, store_video_path, motion_dict_path):
     # 1. ดึง id จาก url ท้ายสุด
     video_id = word_url.split('/')[-1].strip()
@@ -146,8 +202,8 @@ def download_th_sl_video(word, context, word_url, store_video_path, motion_dict_
         # ------------------------------------------------
         video_tag = soup.find('video')
         if not video_tag:
-            print("ERROR: video not found!")
-            return "ERROR", "Video not found!"
+            print(f"ERROR: video not found! from {word_url}")
+            return "ERROR", f"Video not found! from {word_url}"
 
         source_tag = video_tag.find('source', type="video/mp4")
         if not source_tag or 'src' not in source_tag.attrs:
@@ -196,36 +252,15 @@ def process_single_url(word, context, word_url, store_video_path, motion_dict_pa
         # ดาวน์โหลดคลิปก่อน
         print(f"Downloading step:")
         status, msg = download_th_sl_video(word, context, word_url, store_video_path, motion_dict_path)
-        if status == "SUCCESS":
-            print(f"Dowloading clip from {word_url} success, and clip saved at: {msg['output_video_path']}")
-            print("Processing clip into motion.jon step:")
-            process_sign_language_video(msg['output_video_path'], msg['output_motion_path'])
-            # ตรวจสอบความปลอดภัย: เช็คว่าไฟล์ motion.json สร้างสำเร็จแล้วจริงๆ
-            if os.path.exists(msg['output_motion_path']):
-                return "SUCCESS", f"Processing video from {msg['output_video_path']} success and saved motion.json at {msg['output_motion_path']}"
-            else:
-                print(f"ERROR: clip from {word_url} can't processed video to motion.json")
-                return "ERROR", f"clip from {word_url} can't processed video to motion.json"
-        else:
-            return status, msg
+        return running_process_sign_language_video(status, msg, word_url)
     elif "dic.ttrs" in word_url:
         print(f"Downloading step:")
         status, msg = download_ttrs_video(word, context, word_url, store_video_path, motion_dict_path)
-        if status == "SUCCESS":
-            print(f"Dowloading clip from {word_url} success, and clip saved at: {msg['output_video_path']}")
-            print("Processing clip into motion.jon step:")
-            process_sign_language_video(msg['output_video_path'], msg['output_motion_path'])
-            # ตรวจสอบความปลอดภัย: เช็คว่าไฟล์ motion.json สร้างสำเร็จแล้วจริงๆ
-            if os.path.exists(msg['output_motion_path']):
-                return "SUCCESS", f"Processing video from {msg['output_video_path']} success and saved motion.json at {msg['output_motion_path']}"
-            else:
-                print(f"ERROR: clip from {word_url} can't processed video to motion.json")
-                return "ERROR", f"clip from {word_url} can't processed video to motion.json"
-        else:
-            return status, msg
+        return running_process_sign_language_video(status, msg, word_url)
     elif "youtube" in word_url or "youtu.be" in word_url:
         print(f"Downloading step:")
         status, msg = download_youtube_video(word, context, word_url, store_video_path, motion_dict_path)
+        return running_process_sign_language_video(status, msg, word_url)
     else:
         return "ERROR", f"This system not supported the source of this url: {word_url}"
 
@@ -250,50 +285,55 @@ def reading_json_file(input_json_path):
             if not os.path.exists(raw_temp_vid_path):
                 os.makedirs(raw_temp_vid_path, exist_ok=True)
 
-            # current_dir = os.getcwd()
-            # error_log = os.path.join(current_dir, "error_condition_two_log.txt")
+            current_dir = os.getcwd()
+            error_log = os.path.join(current_dir, "error_condition_two_log.txt")
             
-            # with open(error_log, "w", encoding="utf-8") as err_log:
-            #     err_log.write("- - - Error Log สำหรับการทำงานของ Condition ที่ 2 - - -\n")
-            #     err_log.flush()
-            word_list = data.get("input_url_word_tsl", [])
+            with open(error_log, "w", encoding="utf-8") as err_log:
+                err_log.write("- - - Error Log สำหรับการทำงานของ Condition ที่ 2 - - -\n")
+                err_log.flush()
 
-            success = 0
-            skipped = 0
-            error = 0
 
-            for idx, word in enumerate(word_list, 1):
-                try:
-                    word_name = word.get("word_name").strip()
-                    word_context = word.get("word_context").strip()
-                    word_url = word.get("word_url").strip()
+                word_list = data.get("input_url_word_tsl", [])
 
-                    # ------------------------------------------------
-                    # ตรวจสอบว่า ชื่อ บริบท และลิงก์ต้นตอของคำเป็นช่องว่างไหม 
-                    # ------------------------------------------------
-                    if word_name and word_context and word_url:
-                        print(f"[{idx}/{len(word_list)}]")
-                        status, msg = process_single_url(word_name, word_context, word_url, raw_temp_vid_path, raw_motion_dict_path)
+                success = 0
+                skipped = 0
+                error = 0
 
-                        if status == "SUCCESS":
-                            success += 1
-                            print(f"{status}: {msg}")
-                        elif status == "SKIPPED":
-                            skipped += 1
-                            print(f"{status}: {msg}")
-                            # err_log.write(f"[{status}]: {msg}") เอานะอันนี้
-                        elif status == "ERROR":
-                            error += 1
-                            print(f"{status}: {msg}")
-                            # err_log.write(f"[{status}]: {msg}") เอานะอันนี้
-                    else:
-                        print(f"[{idx}/{len(word_list)}]")
-                        print("ERROR: Please fill the value.")
+                for idx, word in enumerate(word_list, 1):
+                    try:
+                        word_name = word.get("word_name").strip()
+                        word_context = word.get("word_context").strip()
+                        word_url = word.get("word_url").strip()
 
-                except Exception as e:
-                    error += 1
-                    # print(f"Have an error in  in [{variant_name}]. | Error: {e}")
-                    # log.write(f"Path: {root} | Error: {e}\n")
+                        # ------------------------------------------------
+                        # ตรวจสอบว่า ชื่อ บริบท และลิงก์ต้นตอของคำเป็นช่องว่างไหม 
+                        # ------------------------------------------------
+                        if word_name and word_context and word_url:
+                            print(f"[{idx}/{len(word_list)}]")
+                            status, msg = process_single_url(word_name, word_context, word_url, raw_temp_vid_path, raw_motion_dict_path)
+
+                            if status == "SUCCESS":
+                                success += 1
+                                print(f"{status}: {msg}")
+                            elif status == "SKIPPED":
+                                skipped += 1
+                                print(f"{status}: {msg}")
+                                err_log.write(f"[{status}]: {msg}\n")
+                                err_log.flush()
+                            elif status == "ERROR":
+                                error += 1
+                                print(f"{status}: {msg}")
+                                err_log.write(f"[{status}]: {msg}\n")
+                                err_log.flush()
+                        else:
+                            print(f"[{idx}/{len(word_list)}]")
+                            print("ERROR: Please fill the value.")
+                            err_log.flush()
+
+                    except Exception as e:
+                        error += 1
+                        print(f"Have an error in  in [{word_url}]. | Error: {e}")
+                        log.write(f"URL: {word_url} | Error: {e}\n")
         else:
             print("Error: please dowload MOTION_DICT before you use this operation.")
             return None
@@ -302,10 +342,6 @@ def reading_json_file(input_json_path):
         print(f"Error: {e}")
         return None
         
-
-
-
-
 if __name__ == "__main__":
     print("Running condition_two.py directly.")
     reading_json_file()
