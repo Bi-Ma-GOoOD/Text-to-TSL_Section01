@@ -1,0 +1,11 @@
+"order": 1,
+"library-name": Mediapipe Holistic,
+"command": pip install "mediapipe==0.10.9"
+
+"order": 2,
+"library-name": OpenCV for Python and Numpy
+"command": pip install opencv-python numpy
+
+"order": 3,
+"library-name": Web Scraper
+"command": pip install requests beautifulsoup4 lxml
